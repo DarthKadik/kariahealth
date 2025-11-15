@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oura Data Viewer</title>
+    <!-- 1. Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. Configure custom colors and fonts -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // A warm, off-white/almond color palette
+                        'almond': {
+                            50: '#fdfbf7', // Very light almond (page background)
+                            100: '#f9f5ea',
+                            200: '#f0e6d0',
+                            900: '#2a231a', // Dark brown/black (text)
+                        },
+                    },
+                    fontFamily: {
+                        // Use a clean, modern sans-serif font
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            },
+        };
+    </script>
+    <style>
+        /* A simple loading spinner */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #2a231a;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-almond-50 text-almond-900 font-sans flex items-center justify-center min-h-full p-6">
+
+    <!-- Main Application Container -->
+    <div class="bg-white w-full max-w-lg p-8 md:p-12 rounded-2xl shadow-xl border border-almond-100">
+
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-bold text-almond-900 mb-2">My Oura Data</h1>
+            <p class="text-almond-900/70">Connect your Oura account to view your data.</p>
+        </div>
+
+        <!-- 1. Login View (Visible by default) -->
+        <div id="login-view">
+            <!-- 
+              *****************************************************************
+              * IMPORTANT: YOU MUST ADD YOUR OURA CLIENT ID BELOW            *
+              *****************************************************************
+            -->
+            <div id="client-id-warning" class="mb-4 p-4 bg-red-100 border border-red-300 text-red-800 rounded-lg text-sm">
+                <strong>Action Required:</strong> Please edit this HTML file and replace
+                <code>"YOUR_CLIENT_ID_GOES_HERE"</code> with your actual Oura Client ID.
+            </div>
+
+            <button id="login-button" class="w-full bg-almond-900 text-white py-3 px-5 rounded-xl font-medium hover:bg-almond-900/90 focus:outline-none focus:ring-2 focus:ring-almond-900 focus:ring-offset-2 transition-all duration-200 shadow-lg">
+                Connect with Oura
+            </button>
+        </div>
+
+        <!-- 2. Loading View (Hidden by default) -->
+        <div id="loading-view" class="hidden flex flex-col items-center justify-center space-y-4">
+            <div class="spinner"></div>
+            <p class="text-almond-900/80">Fetching your data...</p>
+        </div>
+        
+        <!-- 3. Error View (Hidden by default) -->
+        <div id="error-view" class="hidden p-4 bg-red-100 border border-red-300 text-red-800 rounded-lg">
+            <h3 class="font-bold mb-2">An Error Occurred</h3>
+            <p id="error-message"></p>
+            <button id="try-again-button" class="mt-4 font-medium text-almond-900 border border-almond-900/50 py-2 px-4 rounded-lg hover:bg-almond-50">
+                Try Again
+            </button>
+        </div>
+
+        <!-- 4. Data View (Hidden by default) -->
+        <div id="data-view" class="hidden space-y-6">
+            <div id="personal-info" class="p-6 bg-almond-50 rounded-xl border border-almond-100">
+                <h2 class="text-xl font-bold mb-4">Personal Info</h2>
+                <div class="space-y-2">
+                    <p><strong>Email:</strong> <span id="data-email"></span></p>
+                    <p><strong>Age:</strong> <span id="data-age"></span></p>
+                    <p><strong>Biological Sex:</strong> <span id="data-sex"></span></p>
+                </div>
+            </div>
+            
+            <div id="sleep-info" class="p-6 bg-almond-50 rounded-xl border border-almond-100">
+                <h2 class="text-xl font-bold mb-4">Latest Sleep Score</h2>
+                <p class="text-5xl font-bold text-almond-900" id="data-sleep-score"></p>
+                <p class="text-almond-900/70" id="data-sleep-date"></p>
+            </div>
+            
+            <button id="logout-button" class="w-full bg-almond-200 text-almond-900 py-3 px-5 rounded-xl font-medium hover:bg-almond-100 focus:outline-none focus:ring-2 focus:ring-almond-900 focus:ring-offset-2 transition-all duration-200">
+                Log Out
+            </button>
+        </div>
+
+    </div>
+
+    <script type="module">
+        // --- CONFIGURATION ---
+        
+        // 1. ⚠️ PASTE YOUR OURA CLIENT ID HERE
+        const OURA_CLIENT_ID = "4835caa1-fc65-41b4-ae24-eb38b9af4ea7"; 
+
+        // 2. Set the scopes (data permissions) you want to request
+        const OURA_SCOPES = [
+            "email",
+            "personal", 
+            "daily",
+            "heartrate",
+            "tag",
+            "workout",
+            "session",
+            "spo2",
+            "ring_configuration",
+            "stress",
+            "heart_health"
+        ].join(" ");
+        
+        // 3. Set the Redirect URI (this page)
+        const OURA_REDIRECT_URI = "https://kardialabs.health/oura";
+
+        // --- DOM ELEMENTS ---
+        const loginView = document.getElementById('login-view');
+        const loadingView = document.getElementById('loading-view');
+        const errorView = document.getElementById('error-view');
+        const dataView = document.getElementById('data-view');
+        const loginButton = document.getElementById('login-button');
+        const logoutButton = document.getElementById('logout-button');
+        const tryAgainButton = document.getElementById('try-again-button');
+        const errorMessage = document.getElementById('error-message');
+        const clientIdWarning = document.getElementById('client-id-warning');
+
+        // --- APPLICATION LOGIC ---
+
+        /**
+         * Main function to run when the page loads
+         */
+        function main() {
+            // Check if the Client ID has been set
+            if (OURA_CLIENT_ID === "YOUR_CLIENT_ID_GOES_HERE") {
+                clientIdWarning.classList.remove('hidden');
+                loginButton.disabled = true;
+                loginButton.classList.add('opacity-50', 'cursor-not-allowed');
+                return; // Stop the app
+            } else {
+                clientIdWarning.classList.add('hidden');
+            }
+            
+            // Add event listeners
+            loginButton.addEventListener('click', redirectToOura);
+            logoutButton.addEventListener('click', logOut);
+            tryAgainButton.addEventListener('click', logOut);
+
+            // Check if the URL contains OAuth redirect parameters
+            if (window.location.hash.includes("access_token")) {
+                handleOAuthCallback();
+            } else if (localStorage.getItem("oura_access_token")) {
+                // User is already logged in, fetch data
+                const token = localStorage.getItem("oura_access_token");
+                fetchData(token);
+            } else {
+                // Not logged in, show the login button
+                showView('login');
+            }
+        }
+
+        /**
+         * Redirects the user to the Oura authorization page.
+         */
+        function redirectToOura() {
+            const state = generateRandomString(16);
+            localStorage.setItem("oura_oauth_state", state);
+
+            const authUrl = `https://cloud.ouraring.com/oauth/authorize?` +
+                `response_type=token&` +
+                `client_id=${encodeURIComponent(OURA_CLIENT_ID)}&` +
+                `redirect_uri=${encodeURIComponent(OURA_REDIRECT_URI)}&` +
+                `scope=${encodeURIComponent(OURA_SCOPES)}&` +
+                `state=${encodeURIComponent(state)}`;
+            
+            window.location.href = authUrl;
+        }
+
+        /**
+         * Handles the redirect back from Oura after authorization.
+         */
+        function handleOAuthCallback() {
+            showView('loading');
+            
+            const params = new URLSearchParams(window.location.hash.substring(1)); // Remove the '#'
+            const accessToken = params.get("access_token");
+            const state = params.get("state");
+            const storedState = localStorage.getItem("oura_oauth_state");
+
+            // Clear the URL hash for security
+            history.replaceState(null, null, ' ');
+
+            if (!state || state !== storedState) {
+                showError("Invalid state. Please try logging in again.");
+                return;
+            }
+
+            if (!accessToken) {
+                showError("Failed to retrieve access token. Please try again.");
+                return;
+            }
+
+            // Successfully authenticated
+            localStorage.setItem("oura_access_token", accessToken);
+            localStorage.removeItem("oura_oauth_state");
+            
+            // Fetch data
+            fetchData(accessToken);
+        }
+
+        /**
+         * Fetches data from the Oura API using the access token.
+         */
+        async function fetchData(token) {
+            showView('loading');
+            try {
+                // Fetch personal info and sleep data in parallel
+                const [personalInfoRes, sleepRes] = await Promise.all([
+                    fetchOuraApi("/v2/usercollection/personal_info", token),
+                    fetchOuraApi("/v2/usercollection/daily_sleep", token)
+                ]);
+
+                if (!personalInfoRes.ok || !sleepRes.ok) {
+                    if (personalInfoRes.status === 401 || sleepRes.status === 401) {
+                        throw new Error("Token is invalid or expired. Please log in again.");
+                    }
+                    throw new Error("Failed to fetch data from Oura.");
+                }
+
+                const personalInfo = await personalInfoRes.json();
+                const sleepData = await sleepRes.json();
+                
+                displayData(personalInfo, sleepData.data);
+                showView('data');
+
+            } catch (error) {
+                console.error("Error fetching Oura data:", error);
+                showError(error.message);
+                logOut(false); // Clear broken token
+            }
+        }
+        
+        /**
+         * A helper function to make authenticated requests to the Oura API.
+         */
+        function fetchOuraApi(endpoint, token) {
+            // Add a date range for time-series data like sleep
+            let url = `https://api.ouraring.com${endpoint}`;
+            if (endpoint.includes('daily_sleep')) {
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const endDate = yesterday.toISOString().split('T')[0];
+                
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                const startDate = weekAgo.toISOString().split('T')[0];
+                
+                url += `?start_date=${startDate}&end_date=${endDate}`;
+            }
+            
+            return fetch(url, {
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                }
+            });
+        }
+
+        /**
+         * Populates the UI with the fetched data.
+         */
+        function displayData(personalInfo, sleepEntries) {
+            // Personal Info
+            document.getElementById('data-email').textContent = personalInfo.email || 'Not provided';
+            document.getElementById('data-age').textContent = personalInfo.age || 'Not provided';
+            document.getElementById('data-sex').textContent = personalInfo.biological_sex || 'Not provided';
+
+            // Sleep Info (get the most recent entry)
+            if (sleepEntries && sleepEntries.length > 0) {
+                const latestSleep = sleepEntries[sleepEntries.length - 1];
+                document.getElementById('data-sleep-score').textContent = latestSleep.score || 'N/A';
+                document.getElementById('data-sleep-date').textContent = `On ${latestSleep.day}` || '';
+            } else {
+                 document.getElementById('data-sleep-score').textContent = 'No Data';
+                 document.getElementById('data-sleep-date').textContent = 'No sleep data found for the last 7 days.';
+            }
+        }
+
+        /**
+         * Clears local storage and shows the login view.
+         */
+        function logOut(showLogin = true) {
+            localStorage.removeItem("oura_access_token");
+            localStorage.removeItem("oura_oauth_state");
+            if(showLogin) {
+                showView('login');
+            }
+        }
+
+        /**
+         * Shows a specific view ('login', 'loading', 'data', 'error')
+         */
+        function showView(viewName) {
+            loginView.classList.add('hidden');
+            loadingView.classList.add('hidden');
+            dataView.classList.add('hidden');
+            errorView.classList.add('hidden');
+
+            if (viewName === 'login') {
+                loginView.classList.remove('hidden');
+            } else if (viewName === 'loading') {
+                loadingView.classList.remove('hidden');
+            } else if (viewName === 'data') {
+                dataView.classList.remove('hidden');
+            } else if (viewName === 'error') {
+                errorView.classList.remove('hidden');
+            }
+        }
+        
+        /**
+         * Displays an error message in the UI.
+         */
+        function showError(message) {
+            errorMessage.textContent = message;
+            showView('error');
+        }
+
+        /**
+         * Generates a random string for the 'state' parameter.
+         */
+        function generateRandomString(length) {
+            let result = '';
+            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            for (let i = 0; i < length; i++) {
+                result += characters.charAt(Math.floor(Math.random() * characters.length));
+            }
+            return result;
+        }
+
+        // Run the app
+        document.addEventListener('DOMContentLoaded', main);
+    </script>
+</body>
+</html>
